@@ -5,24 +5,28 @@ import logging
 import time
 from typing import Dict, Any, List
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.DEBUG,  # Change to DEBUG level
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# The MCP function will be available in the global namespace when running in Cursor
+mcp__firecrawl_scrape = globals().get('mcp__firecrawl_scrape')
+if not mcp__firecrawl_scrape:
+    logger.error("MCP function not found in global namespace")
+    raise ImportError("MCP Firecrawl integration is required. Please ensure you're running in Cursor with MCP enabled.")
+else:
+    logger.info("Successfully found mcp__firecrawl_scrape in global namespace")
 
 class FirecrawlScraper:
     def __init__(self, api_key=None):
         """Initialize the Firecrawl scraper with API key."""
         self.api_key = api_key or os.environ.get("FIRECRAWL_API_KEY")
         if not self.api_key:
-            logger.warning("No Firecrawl API key provided. MCP integration may fail.")
-        
-        # MCP server configuration
-        self.base_url = "http://localhost:3000"  # Default MCP server URL
-        self.mcp_endpoint = f"{self.base_url}/v1/tools"
-        
-        # Configure retry parameters
-        self.max_retries = 3
-        self.retry_delay = 2
+            raise ValueError("Firecrawl API key is required. Please set FIRECRAWL_API_KEY environment variable.")
+        logger.info("FirecrawlScraper initialized with API key")
 
     def scrape_subreddit(self, subreddit, max_pages=2, cache=True):
         """
@@ -32,33 +36,50 @@ class FirecrawlScraper:
             subreddit: Name of the subreddit to scrape
             max_pages: Maximum number of pages to scrape
             cache: Whether to use cached data if available
-            
-        Returns:
-            Dictionary containing the scraped data
         """
         cache_file = f"backend/data_{subreddit}.json"
         
         # Remove 'r/' prefix if present
         clean_subreddit = subreddit.replace('r/', '').strip()
+        logger.debug(f"Scraping subreddit: r/{clean_subreddit}")
         
         # Check cache first if enabled
         if cache and os.path.exists(cache_file):
-            logger.info(f"Using cached data for r/{clean_subreddit}")
+            logger.info(f"Found cache file for r/{clean_subreddit}")
             try:
                 with open(cache_file, "r") as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
-                logger.warning(f"Cache file for r/{clean_subreddit} is corrupted. Will scrape fresh data.")
+                    cached_data = json.load(f)
+                    logger.debug(f"Cache data loaded successfully: {len(cached_data.get('posts', []))} posts found")
+                    return cached_data
             except Exception as e:
-                logger.error(f"Error reading cache file: {str(e)}")
+                logger.warning(f"Cache read failed for r/{clean_subreddit}: {str(e)}")
         
         # Prepare the Reddit URL
         url = f"https://www.reddit.com/r/{clean_subreddit}/hot/"
+        logger.info(f"Fetching data from {url}")
         
         try:
-            # Make the request to Firecrawl MCP
-            logger.info(f"Scraping data from {url} using Firecrawl MCP")
-            reddit_data = self.firecrawl_scrape(url, max_pages)
+            # Get the MCP function from the global namespace
+            mcp_scrape = globals().get('mcp__firecrawl_scrape')
+            if not mcp_scrape:
+                raise ImportError("MCP function not available. Please run in Cursor with MCP enabled.")
+            
+            # Use the MCP function
+            logger.debug("Calling mcp__firecrawl_scrape with parameters:")
+            logger.debug(f"URL: {url}")
+            logger.debug("Formats: ['markdown']")
+            logger.debug("onlyMainContent: True")
+            logger.debug("waitFor: 3000")
+            
+            reddit_data = mcp_scrape(
+                url=url,
+                formats=["markdown"],
+                onlyMainContent=True,
+                waitFor=3000,
+                timeout=30000
+            )
+            
+            logger.debug(f"Raw Firecrawl response: {json.dumps(reddit_data, indent=2)}")
             
             # Transform the data to our expected format
             processed_data = self.process_firecrawl_response(reddit_data, clean_subreddit)
@@ -74,89 +95,12 @@ class FirecrawlScraper:
             
         except Exception as e:
             logger.error(f"Error scraping r/{clean_subreddit}: {str(e)}", exc_info=True)
-            # Return empty data structure in case of error
-            return {"posts": [], "error": str(e)}
-    
-    def firecrawl_scrape(self, url, max_pages=2):
-        """
-        Use Firecrawl MCP to scrape a URL.
-        
-        Args:
-            url: The URL to scrape
-            max_pages: Maximum number of pages to scrape
-            
-        Returns:
-            The scraped data
-        """
-        # We'll use the firecrawl_scrape tool from MCP
-        payload = {
-            "name": "firecrawl_scrape",
-            "arguments": {
-                "url": url,
-                "formats": ["markdown"],
-                "onlyMainContent": True,
-                "waitFor": 3000,  # Wait 3 seconds for JavaScript execution
-                "timeout": 30000,  # 30 second timeout
-                "mobile": False    # Use desktop view
-            }
-        }
-        
-        # Make the request with retries
-        for attempt in range(self.max_retries):
-            try:
-                response = requests.post(
-                    self.mcp_endpoint,
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json"
-                    }
-                )
-                
-                response.raise_for_status()  # Raise exception for HTTP errors
-                
-                data = response.json()
-                
-                # Check if there's an error in the response
-                if data.get("isError", False):
-                    error_message = "Unknown error"
-                    if "content" in data and len(data["content"]) > 0:
-                        error_message = data["content"][0].get("text", "Unknown error")
-                    logger.error(f"Firecrawl MCP error: {error_message}")
-                    
-                    # If rate limited, wait and retry
-                    if "rate limit" in error_message.lower():
-                        wait_time = self.retry_delay * (2 ** attempt)
-                        logger.info(f"Rate limited. Retrying in {wait_time} seconds...")
-                        time.sleep(wait_time)
-                        continue
-                        
-                    raise Exception(error_message)
-                
-                return data
-                
-            except requests.exceptions.RequestException as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Request failed: {str(e)}. Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"All retry attempts failed: {str(e)}")
-                    raise
-        
-        raise Exception("Failed to scrape data after multiple attempts")
-    
+            raise  # Re-raise the exception instead of returning mock data
+
     def process_firecrawl_response(self, raw_data, subreddit):
-        """
-        Process the raw response from Firecrawl into our expected format.
+        """Process the raw response from Firecrawl into our expected format."""
+        logger.debug(f"Processing Firecrawl response for r/{subreddit}")
         
-        Args:
-            raw_data: The raw response from Firecrawl
-            subreddit: The subreddit name
-            
-        Returns:
-            Processed data in our expected format
-        """
-        # Initialize the processed data structure
         processed_data = {
             "posts": [],
             "metadata": {
@@ -167,121 +111,110 @@ class FirecrawlScraper:
         }
         
         try:
+            if not raw_data:
+                logger.error("Received empty response from Firecrawl")
+                raise ValueError("Empty response from Firecrawl")
+                
+            if "content" not in raw_data or not raw_data["content"]:
+                logger.error("No content field in Firecrawl response")
+                raise ValueError("No content in Firecrawl response")
+                
             # Extract the content from the Firecrawl response
-            if "content" in raw_data and len(raw_data["content"]) > 0:
-                # The Markdown content will be in the text field
-                markdown_content = raw_data["content"][0].get("text", "")
+            markdown_content = raw_data["content"][0].get("text", "")
+            if not markdown_content:
+                logger.error("No text content in Firecrawl response")
+                raise ValueError("No text content in Firecrawl response")
                 
-                # Parse the Markdown content to extract posts
-                processed_data["posts"] = self.extract_posts_from_markdown(markdown_content, subreddit)
-                processed_data["metadata"]["total_posts"] = len(processed_data["posts"])
-                
+            logger.debug(f"Raw markdown content length: {len(markdown_content)}")
+            logger.debug(f"First 500 characters of content: {markdown_content[:500]}")
+            
+            # Parse the Markdown content to extract posts
+            processed_data["posts"] = self.extract_posts_from_markdown(markdown_content, subreddit)
+            processed_data["metadata"]["total_posts"] = len(processed_data["posts"])
+            
+            logger.info(f"Successfully processed {len(processed_data['posts'])} posts from r/{subreddit}")
             return processed_data
             
         except Exception as e:
             logger.error(f"Error processing Firecrawl response: {str(e)}", exc_info=True)
-            return processed_data
-    
+            raise
+
     def extract_posts_from_markdown(self, markdown_content, subreddit):
-        """
-        Extract posts from the Markdown content.
-        
-        Args:
-            markdown_content: The Markdown content from Firecrawl
-            subreddit: The subreddit name
-            
-        Returns:
-            List of extracted posts
-        """
+        """Extract posts from the Markdown content."""
+        logger.debug(f"Extracting posts from markdown for r/{subreddit}")
         posts = []
         
-        # If we can't properly parse the content, use a simplified approach
-        # Just add dummy entries so we can continue with the app
-        if not markdown_content or len(markdown_content) < 100:
-            logger.warning("Insufficient content from Firecrawl. Using dummy data.")
-            # Create dummy posts (similar to our previous simulation)
-            for i in range(5):
-                posts.append({
-                    "id": f"post_{i}",
-                    "title": f"Sample post {i} about challenges in r/{subreddit}",
-                    "content": (
-                        "Parents face many challenges with neurodivergent children. "
-                        "It's a struggle to find the right support and resources. "
-                        "The school system can be especially difficult to navigate. "
-                        "Finding time for self-care is a problem many parents mention."
-                    ),
-                    "url": f"https://www.reddit.com/r/{subreddit}/comments/sample_{i}",
-                    "score": 100 - (i * 10),
-                    "comments": [
-                        {
-                            "id": f"comment_{i}_1",
-                            "content": "I struggle with this too. It's so hard to find good resources.",
-                            "score": 50 - (i * 5)
-                        },
-                        {
-                            "id": f"comment_{i}_2",
-                            "content": "Have you tried this approach? It helped with our challenges.",
-                            "score": 30 - (i * 3)
-                        }
-                    ]
-                })
-            return posts
+        if not markdown_content or len(markdown_content.strip()) == 0:
+            logger.error("Empty markdown content")
+            raise ValueError("Empty markdown content")
             
         # Split the content into sections that might represent posts
-        # This is a simplistic approach that may need refinement depending on the actual format
         sections = markdown_content.split("\n## ")
+        logger.debug(f"Found {len(sections)} potential post sections")
         
         for section_idx, section in enumerate(sections):
-            # Skip empty sections
-            if not section.strip():
+            try:
+                # Skip empty sections
+                if not section.strip():
+                    continue
+                    
+                # The first section might not start with ##, handle it separately
+                if section_idx == 0 and not section.startswith("## "):
+                    title = "Main Content"
+                    content = section
+                else:
+                    # Extract title and content
+                    lines = section.split("\n")
+                    title = lines[0].strip().replace("## ", "")
+                    content = "\n".join(lines[1:]).strip()
+                
+                logger.debug(f"Processing post {section_idx + 1}: {title[:50]}...")
+                
+                # Create a post object
+                post = {
+                    "id": f"post_{section_idx}",
+                    "title": title,
+                    "content": content,
+                    "url": f"https://www.reddit.com/r/{subreddit}/comments/{section_idx}",
+                    "score": 100 - (section_idx * 10),
+                    "comments": []
+                }
+                
+                # Try to extract comments
+                comment_blocks = content.split("\n### ")
+                if len(comment_blocks) > 1:
+                    post["content"] = comment_blocks[0].strip()
+                    logger.debug(f"Found {len(comment_blocks) - 1} comments for post {section_idx + 1}")
+                    
+                    for comment_idx, comment_block in enumerate(comment_blocks[1:]):
+                        comment_lines = comment_block.split("\n")
+                        comment_title = comment_lines[0].strip()
+                        comment_content = "\n".join(comment_lines[1:]).strip()
+                        
+                        comment = {
+                            "id": f"comment_{section_idx}_{comment_idx}",
+                            "content": f"{comment_title}: {comment_content}",
+                            "score": 50 - (comment_idx * 5)
+                        }
+                        
+                        post["comments"].append(comment)
+                
+                posts.append(post)
+                
+            except Exception as e:
+                logger.error(f"Error processing section {section_idx}: {str(e)}", exc_info=True)
                 continue
-                
-            # The first section might not start with ##, handle it separately
-            if section_idx == 0 and not section.startswith("## "):
-                title = "Main Content"
-                content = section
-            else:
-                # Extract title and content
-                lines = section.split("\n")
-                title = lines[0].strip().replace("## ", "")
-                content = "\n".join(lines[1:]).strip()
-            
-            # Create a post object
-            post = {
-                "id": f"post_{section_idx}",
-                "title": title,
-                "content": content,
-                "url": f"https://www.reddit.com/r/{subreddit}/comments/{section_idx}",
-                "score": 100 - (section_idx * 10),
-                "comments": []
-            }
-            
-            # Try to extract comments (simplistic approach)
-            comment_blocks = content.split("\n### ")
-            if len(comment_blocks) > 1:
-                post["content"] = comment_blocks[0].strip()
-                
-                for comment_idx, comment_block in enumerate(comment_blocks[1:]):
-                    comment_lines = comment_block.split("\n")
-                    comment_title = comment_lines[0].strip()
-                    comment_content = "\n".join(comment_lines[1:]).strip()
-                    
-                    comment = {
-                        "id": f"comment_{section_idx}_{comment_idx}",
-                        "content": f"{comment_title}: {comment_content}",
-                        "score": 50 - (comment_idx * 5)
-                    }
-                    
-                    post["comments"].append(comment)
-            
-            posts.append(post)
         
+        logger.info(f"Successfully extracted {len(posts)} posts with {sum(len(p['comments']) for p in posts)} total comments")
         return posts
 
 if __name__ == "__main__":
     # Basic test to see if the scraper is working
     scraper = FirecrawlScraper()
     for sub in ["autismparenting", "ADHDparenting", "dyslexia"]:
-        print(f"Scraping r/{sub}...")
-        data = scraper.scrape_subreddit(sub)
-        print(f"Completed scraping r/{sub}. Found {len(data.get('posts', []))} posts.") 
+        logger.info(f"Testing scraper with r/{sub}")
+        try:
+            data = scraper.scrape_subreddit(sub)
+            logger.info(f"Successfully scraped r/{sub}: {len(data.get('posts', []))} posts found")
+        except Exception as e:
+            logger.error(f"Failed to scrape r/{sub}: {str(e)}", exc_info=True) 

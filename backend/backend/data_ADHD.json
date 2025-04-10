@@ -1,0 +1,23 @@
+{
+  "posts": [
+    {
+      "id": "post_0",
+      "title": "Test Post",
+      "content": "This is a test post content.",
+      "url": "https://www.reddit.com/r/ADHD/comments/0",
+      "score": 100,
+      "comments": [
+        {
+          "id": "comment_0_0",
+          "content": "Comment 1: This is a test comment.",
+          "score": 50
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "subreddit": "ADHD",
+    "pages_scraped": 1,
+    "total_posts": 1
+  }
+}

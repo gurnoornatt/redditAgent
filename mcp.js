@@ -5,220 +5,143 @@
  * for the Reddit Agent application.
  */
 
-// Note: In a real Cursor implementation, the actual mcp__query function 
-// would be available directly from the environment. This is a stub for 
-// compatibility with the development environment.
+const { Pool } = require('pg');
+const dbConfig = require('./db');
+
+// Create a connection pool
+const pool = new Pool(dbConfig);
+
+// Test the database connection
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('Error connecting to the database:', err.stack);
+  } else {
+    console.log('Successfully connected to the database');
+    release();
+  }
+});
 
 /**
- * Execute a SQL query against the MCP database
- * @param {string} sql - SQL query to execute
- * @returns {Promise<Array>} - Query results
+ * Execute a SQL query using the MCP database connection
+ * @param {string} sql - The SQL query to execute
+ * @param {Array} params - Query parameters (optional)
+ * @returns {Promise} - Resolves with query results
  */
-async function mcp__query(sql) {
-  // This function would normally be provided by the Cursor environment
-  // For local development and testing, we'll log the query
-  console.log(`[MCP] Executing query: ${sql}`);
-  
-  // In the actual implementation, Cursor/MCP would execute this query
-  // and return the results
-  
-  // This is a mock implementation for development
-  if (typeof global.mcp__query === 'function') {
-    return global.mcp__query(sql);
+async function mcp__query(sql, params = []) {
+  try {
+    const result = await pool.query(sql, params);
+    return result.rows;
+  } catch (error) {
+    console.error('Database query error:', error);
+    throw error;
   }
-  
-  // Return an empty array as a fallback
-  console.log('[MCP] Returning mock empty result (MCP not available)');
-  return [];
 }
 
 /**
- * Initialize the database schema for the Reddit Agent
- * Creates tables for subreddits, posts, and comments if they don't exist
- * @returns {Promise<boolean>} - Success status
+ * Initialize the database schema
  */
 async function initDatabaseSchema() {
+  const createTables = `
+    CREATE TABLE IF NOT EXISTS subreddits (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) UNIQUE NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS posts (
+      id SERIAL PRIMARY KEY,
+      subreddit_id INTEGER REFERENCES subreddits(id),
+      title TEXT NOT NULL,
+      content TEXT,
+      url TEXT,
+      author VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS comments (
+      id SERIAL PRIMARY KEY,
+      post_id INTEGER REFERENCES posts(id),
+      content TEXT NOT NULL,
+      author VARCHAR(255),
+      parent_id INTEGER REFERENCES comments(id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+
   try {
-    // Create subreddits table
-    await mcp__query(`
-      CREATE TABLE IF NOT EXISTS subreddits (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        display_name TEXT NOT NULL,
-        description TEXT,
-        subscribers INTEGER,
-        created_utc INTEGER,
-        over18 INTEGER,
-        url TEXT,
-        icon_img TEXT,
-        last_updated INTEGER
-      )
-    `);
-    
-    // Create posts table
-    await mcp__query(`
-      CREATE TABLE IF NOT EXISTS posts (
-        id TEXT PRIMARY KEY,
-        subreddit_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        author TEXT,
-        created_utc INTEGER,
-        score INTEGER,
-        upvote_ratio REAL,
-        num_comments INTEGER,
-        permalink TEXT,
-        url TEXT,
-        is_self INTEGER,
-        selftext TEXT,
-        last_updated INTEGER,
-        FOREIGN KEY (subreddit_id) REFERENCES subreddits(id)
-      )
-    `);
-    
-    // Create comments table
-    await mcp__query(`
-      CREATE TABLE IF NOT EXISTS comments (
-        id TEXT PRIMARY KEY,
-        post_id TEXT NOT NULL,
-        parent_id TEXT NOT NULL,
-        author TEXT,
-        body TEXT,
-        created_utc INTEGER,
-        score INTEGER,
-        permalink TEXT,
-        last_updated INTEGER,
-        FOREIGN KEY (post_id) REFERENCES posts(id)
-      )
-    `);
-    
-    console.log('[MCP] Database schema initialized successfully');
-    return true;
+    await mcp__query(createTables);
+    console.log('Database schema initialized successfully');
   } catch (error) {
-    console.error('[MCP] Error initializing database schema:', error);
-    return false;
+    console.error('Error initializing database schema:', error);
+    throw error;
   }
 }
 
 /**
- * Get subreddits from the database
- * @param {Object} options - Query options
- * @param {number} options.limit - Maximum number of results to return
- * @param {number} options.offset - Number of results to skip
- * @returns {Promise<Array>} - Array of subreddits
+ * Get all subreddits
+ * @returns {Promise<Array>} List of subreddits
  */
-async function getSubreddits({ limit = 10, offset = 0 } = {}) {
-  try {
-    const results = await mcp__query(`
-      SELECT * FROM subreddits
-      ORDER BY subscribers DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `);
-    
-    return results;
-  } catch (error) {
-    console.error('[MCP] Error fetching subreddits:', error);
-    return [];
-  }
+async function getSubreddits() {
+  return await mcp__query('SELECT * FROM subreddits ORDER BY name');
 }
 
 /**
  * Get posts from a specific subreddit
- * @param {string} subredditId - ID of the subreddit
- * @param {Object} options - Query options
- * @param {number} options.limit - Maximum number of results to return
- * @param {number} options.offset - Number of results to skip
- * @param {string} options.sortBy - Field to sort by (created_utc, score, num_comments)
- * @param {string} options.sortOrder - Sort order (ASC, DESC)
- * @returns {Promise<Array>} - Array of posts
+ * @param {string} subredditName - Name of the subreddit
+ * @param {number} limit - Maximum number of posts to return
+ * @param {number} offset - Number of posts to skip
+ * @returns {Promise<Array>} List of posts
  */
-async function getSubredditPosts(subredditId, { limit = 25, offset = 0, sortBy = 'created_utc', sortOrder = 'DESC' } = {}) {
-  try {
-    // Validate sort parameters to prevent SQL injection
-    const validSortFields = ['created_utc', 'score', 'num_comments', 'title'];
-    const validSortOrders = ['ASC', 'DESC'];
-    
-    if (!validSortFields.includes(sortBy)) {
-      sortBy = 'created_utc';
-    }
-    
-    if (!validSortOrders.includes(sortOrder)) {
-      sortOrder = 'DESC';
-    }
-    
-    const results = await mcp__query(`
-      SELECT * FROM posts
-      WHERE subreddit_id = '${subredditId.replace(/'/g, "''")}'
-      ORDER BY ${sortBy} ${sortOrder}
-      LIMIT ${limit} OFFSET ${offset}
-    `);
-    
-    return results;
-  } catch (error) {
-    console.error(`[MCP] Error fetching posts for subreddit ${subredditId}:`, error);
-    return [];
-  }
+async function getSubredditPosts(subredditName, limit = 10, offset = 0) {
+  const query = `
+    SELECT p.* FROM posts p
+    JOIN subreddits s ON p.subreddit_id = s.id
+    WHERE s.name = $1
+    ORDER BY p.created_at DESC
+    LIMIT $2 OFFSET $3
+  `;
+  return await mcp__query(query, [subredditName, limit, offset]);
 }
 
 /**
  * Get comments for a specific post
- * @param {string} postId - ID of the post
- * @param {Object} options - Query options
- * @param {number} options.limit - Maximum number of results to return
- * @param {number} options.offset - Number of results to skip
- * @returns {Promise<Array>} - Array of comments
+ * @param {number} postId - ID of the post
+ * @param {number} limit - Maximum number of comments to return
+ * @param {number} offset - Number of comments to skip
+ * @returns {Promise<Array>} List of comments
  */
-async function getPostComments(postId, { limit = 100, offset = 0 } = {}) {
-  try {
-    const results = await mcp__query(`
-      SELECT * FROM comments
-      WHERE post_id = '${postId.replace(/'/g, "''")}'
-      ORDER BY score DESC, created_utc DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `);
-    
-    return results;
-  } catch (error) {
-    console.error(`[MCP] Error fetching comments for post ${postId}:`, error);
-    return [];
-  }
+async function getPostComments(postId, limit = 50, offset = 0) {
+  const query = `
+    SELECT * FROM comments
+    WHERE post_id = $1
+    ORDER BY created_at DESC
+    LIMIT $2 OFFSET $3
+  `;
+  return await mcp__query(query, [postId, limit, offset]);
 }
 
 /**
  * Search for posts matching a query
- * @param {string} query - Search query
- * @param {Object} options - Search options
- * @param {string} options.subredditId - Optional subreddit ID to limit search to
- * @param {number} options.limit - Maximum number of results to return
- * @param {number} options.offset - Number of results to skip
- * @returns {Promise<Array>} - Array of matching posts
+ * @param {string} searchQuery - Search query
+ * @param {number} limit - Maximum number of results to return
+ * @returns {Promise<Array>} List of matching posts
  */
-async function searchPosts(query, { subredditId = null, limit = 25, offset = 0 } = {}) {
-  try {
-    // Clean the search query to prevent SQL injection
-    const safeQuery = query.replace(/'/g, "''");
-    
-    let sql = `
-      SELECT * FROM posts
-      WHERE (title LIKE '%${safeQuery}%' OR selftext LIKE '%${safeQuery}%')
-    `;
-    
-    if (subredditId) {
-      sql += ` AND subreddit_id = '${subredditId.replace(/'/g, "''")}'`;
-    }
-    
-    sql += `
-      ORDER BY score DESC, created_utc DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `;
-    
-    const results = await mcp__query(sql);
-    
-    return results;
-  } catch (error) {
-    console.error(`[MCP] Error searching posts for "${query}":`, error);
-    return [];
-  }
+async function searchPosts(searchQuery, limit = 10) {
+  const query = `
+    SELECT p.*, s.name as subreddit_name
+    FROM posts p
+    JOIN subreddits s ON p.subreddit_id = s.id
+    WHERE to_tsvector('english', p.title || ' ' || COALESCE(p.content, '')) @@ plainto_tsquery('english', $1)
+    ORDER BY p.created_at DESC
+    LIMIT $2
+  `;
+  return await mcp__query(query, [searchQuery, limit]);
 }
+
+// Clean up database connections when the application exits
+process.on('exit', () => {
+  pool.end();
+});
 
 module.exports = {
   mcp__query,

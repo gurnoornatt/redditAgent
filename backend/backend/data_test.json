@@ -1,0 +1,104 @@
+{
+  "posts": [
+    {
+      "id": "post_0",
+      "title": "Sample post 0 about challenges in r/test",
+      "content": "Parents face many challenges with neurodivergent children. It's a struggle to find the right support and resources. The school system can be especially difficult to navigate. Finding time for self-care is a problem many parents mention.",
+      "url": "https://www.reddit.com/r/test/comments/sample_0",
+      "score": 100,
+      "comments": [
+        {
+          "id": "comment_0_1",
+          "content": "I struggle with this too. It's so hard to find good resources.",
+          "score": 50
+        },
+        {
+          "id": "comment_0_2",
+          "content": "Have you tried this approach? It helped with our challenges.",
+          "score": 30
+        }
+      ]
+    },
+    {
+      "id": "post_1",
+      "title": "Sample post 1 about challenges in r/test",
+      "content": "Parents face many challenges with neurodivergent children. It's a struggle to find the right support and resources. The school system can be especially difficult to navigate. Finding time for self-care is a problem many parents mention.",
+      "url": "https://www.reddit.com/r/test/comments/sample_1",
+      "score": 90,
+      "comments": [
+        {
+          "id": "comment_1_1",
+          "content": "I struggle with this too. It's so hard to find good resources.",
+          "score": 45
+        },
+        {
+          "id": "comment_1_2",
+          "content": "Have you tried this approach? It helped with our challenges.",
+          "score": 27
+        }
+      ]
+    },
+    {
+      "id": "post_2",
+      "title": "Sample post 2 about challenges in r/test",
+      "content": "Parents face many challenges with neurodivergent children. It's a struggle to find the right support and resources. The school system can be especially difficult to navigate. Finding time for self-care is a problem many parents mention.",
+      "url": "https://www.reddit.com/r/test/comments/sample_2",
+      "score": 80,
+      "comments": [
+        {
+          "id": "comment_2_1",
+          "content": "I struggle with this too. It's so hard to find good resources.",
+          "score": 40
+        },
+        {
+          "id": "comment_2_2",
+          "content": "Have you tried this approach? It helped with our challenges.",
+          "score": 24
+        }
+      ]
+    },
+    {
+      "id": "post_3",
+      "title": "Sample post 3 about challenges in r/test",
+      "content": "Parents face many challenges with neurodivergent children. It's a struggle to find the right support and resources. The school system can be especially difficult to navigate. Finding time for self-care is a problem many parents mention.",
+      "url": "https://www.reddit.com/r/test/comments/sample_3",
+      "score": 70,
+      "comments": [
+        {
+          "id": "comment_3_1",
+          "content": "I struggle with this too. It's so hard to find good resources.",
+          "score": 35
+        },
+        {
+          "id": "comment_3_2",
+          "content": "Have you tried this approach? It helped with our challenges.",
+          "score": 21
+        }
+      ]
+    },
+    {
+      "id": "post_4",
+      "title": "Sample post 4 about challenges in r/test",
+      "content": "Parents face many challenges with neurodivergent children. It's a struggle to find the right support and resources. The school system can be especially difficult to navigate. Finding time for self-care is a problem many parents mention.",
+      "url": "https://www.reddit.com/r/test/comments/sample_4",
+      "score": 60,
+      "comments": [
+        {
+          "id": "comment_4_1",
+          "content": "I struggle with this too. It's so hard to find good resources.",
+          "score": 30
+        },
+        {
+          "id": "comment_4_2",
+          "content": "Have you tried this approach? It helped with our challenges.",
+          "score": 18
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "subreddit": "test",
+    "pages_scraped": 1,
+    "total_posts": 5
+  }
+}
