@@ -6,7 +6,7 @@ from functools import wraps
 from flask_cors import CORS
 
 # Import our modules
-from scraper import FirecrawlScraper
+from scraper import RedditScraper
 from analyzer import RedditAnalyzer
 
 # Configure logging
@@ -66,7 +66,7 @@ def generate_content():
         logger.info(f"Generating content ideas for r/{subreddit} (max_pages={max_pages}, platform={platform})")
         
         # Initialize our services
-        scraper = FirecrawlScraper()
+        scraper = RedditScraper()
         analyzer = RedditAnalyzer()
         
         # Step 1: Scrape the subreddit (with caching)
@@ -110,7 +110,7 @@ def subreddit_info():
             return jsonify({"error": "Missing 'subreddit' parameter"}), 400
             
         # Initialize our services
-        scraper = FirecrawlScraper()
+        scraper = RedditScraper()
         
         # Get basic subreddit information
         data = scraper.scrape_subreddit(subreddit, max_pages=1)
@@ -145,7 +145,7 @@ def get_pain_points():
             return jsonify({"error": "Missing 'subreddit' parameter"}), 400
             
         # Initialize our services
-        scraper = FirecrawlScraper()
+        scraper = RedditScraper()
         analyzer = RedditAnalyzer()
         
         # Get subreddit data
